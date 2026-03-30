@@ -1,6 +1,6 @@
 {
   "name": "set-sync-docs",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Configure GitHub Actions workflow to sync docs to a target repository",
   "type": "module",
   "bin": {
