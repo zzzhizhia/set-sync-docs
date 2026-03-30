@@ -5,7 +5,8 @@ import type { Config } from "./index.js";
 
 export function normalizePath(input: string): string {
   let p = input.trim();
-  if (p.startsWith("/")) p = p.slice(1);
+  while (p.startsWith("./")) p = p.slice(2);
+  while (p.startsWith("/")) p = p.slice(1);
   if (p && !p.endsWith("/")) p += "/";
   return p;
 }
@@ -46,7 +47,7 @@ jobs:
 `;
 }
 
-export async function writeWorkflow(cwd: string, yaml: string): Promise<void> {
+export async function writeWorkflow(cwd: string, yaml: string): Promise<boolean> {
   const dir = join(cwd, ".github", "workflows");
   const filePath = join(dir, "sync-docs.yml");
 
@@ -57,11 +58,12 @@ export async function writeWorkflow(cwd: string, yaml: string): Promise<void> {
     });
     if (!overwrite) {
       console.log("已取消写入。");
-      return;
+      return false;
     }
   }
 
   mkdirSync(dir, { recursive: true });
   writeFileSync(filePath, yaml, "utf-8");
   console.log(`\n✅ 已写入 ${filePath}`);
+  return true;
 }

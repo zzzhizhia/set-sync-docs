@@ -68,6 +68,14 @@ describe("normalizePath", () => {
   it("handles messy input", () => {
     expect(normalizePath("  /docs/  ")).toBe("docs/");
   });
+
+  it("strips ./ prefix", () => {
+    expect(normalizePath("./docs/")).toBe("docs/");
+  });
+
+  it("strips ./ prefix without trailing slash", () => {
+    expect(normalizePath("./docs")).toBe("docs/");
+  });
 });
 
 describe("generateYaml", () => {

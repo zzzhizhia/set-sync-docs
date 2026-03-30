@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import pc from "picocolors";
@@ -52,17 +53,19 @@ function detectGitContext(): GitContext {
   return { root, owner, repo, branch };
 }
 
-function printPATReminder(config: Config): void {
+function printPATReminder(ctx: GitContext): void {
   console.log("\n" + pc.bold("📋 接下来你需要设置 Personal Access Token:"));
   console.log();
   console.log(`  1. 创建 PAT (需要 ${pc.cyan("repo")} 权限):`);
   console.log(`     https://github.com/settings/tokens/new`);
   console.log();
-  console.log(`  2. 将 PAT 添加为仓库 secret:`);
+  console.log(`  2. 将 PAT 添加为${pc.bold("源仓库")}的 secret（工作流从源仓库运行）:`);
   console.log(pc.dim(`     gh secret set PAT_SYNC_REPO_DOCS_TO_WIKI`));
-  console.log();
-  console.log(`     或在浏览器中设置:`);
-  console.log(`     https://github.com/${config.dstOwner}/${config.dstRepoName}/settings/secrets/actions`);
+  if (ctx.owner && ctx.repo) {
+    console.log();
+    console.log(`     或在浏览器中设置:`);
+    console.log(`     https://github.com/${ctx.owner}/${ctx.repo}/settings/secrets/actions`);
+  }
   console.log();
 }
 
@@ -102,15 +105,20 @@ async function main(): Promise<void> {
   }
 
   const yaml = generateYaml(config);
-  await writeWorkflow(ctx.root, yaml);
+  const written = await writeWorkflow(ctx.root, yaml);
 
-  // Phase 6: PAT reminder
-  printPATReminder(config);
+  // Phase 6: PAT reminder (only if workflow was written)
+  if (written) {
+    printPATReminder(ctx);
+  }
 }
 
-// Only run when executed directly, not when imported by tests
+// Only run when executed directly, not when imported by tests.
+// Use realpathSync to resolve npm/pnpm symlinks in node_modules/.bin/
 const currentFile = fileURLToPath(import.meta.url);
-const isDirectRun = resolve(process.argv[1]) === currentFile;
+const isDirectRun =
+  process.argv[1] != null &&
+  resolve(realpathSync(process.argv[1])) === currentFile;
 
 if (isDirectRun) {
   main().catch((err) => {
