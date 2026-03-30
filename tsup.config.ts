@@ -5,7 +5,7 @@ export default defineConfig({
   format: ["esm"],
   outExtension: () => ({ js: ".mjs" }),
   banner: { js: "#!/usr/bin/env node" },
-  target: "node18",
+  target: "node20",
   clean: true,
   splitting: false,
 });

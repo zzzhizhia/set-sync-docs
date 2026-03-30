@@ -4,11 +4,19 @@ import { join } from "node:path";
 import type { Config } from "./index.js";
 
 export function normalizePath(input: string): string {
-  let p = input.trim();
+  let p = input.trim().replace(/\\/g, "/");
   while (p.startsWith("./")) p = p.slice(2);
   while (p.startsWith("/")) p = p.slice(1);
+  if (p.split("/").some((s) => s === "..")) {
+    throw new Error(`路径不允许包含 "..": ${input}`);
+  }
   if (p && !p.endsWith("/")) p += "/";
   return p;
+}
+
+// Quote a YAML scalar to prevent YAML 1.1 keyword coercion (on/yes/no → boolean)
+function q(value: string): string {
+  return JSON.stringify(value);
 }
 
 export function generateYaml(config: Config): string {
@@ -20,7 +28,7 @@ export function generateYaml(config: Config): string {
 
 on:
   push:
-    branches: [${config.srcBranch}]
+    branches: [${q(config.srcBranch)}]
     paths:
       - "${srcPathTrigger}"
   workflow_dispatch:
@@ -36,12 +44,12 @@ jobs:
         uses: andstor/copycat-action@v3
         with:
           personal_token: \${{ secrets.PAT_SYNC_REPO_DOCS_TO_WIKI }}
-          src_path: ${srcPathAction}
-          dst_path: ${dstPathAction}
-          dst_owner: ${config.dstOwner}
-          dst_repo_name: ${config.dstRepoName}
-          dst_branch: ${config.dstBranch}
-          src_branch: ${config.srcBranch}
+          src_path: ${q(srcPathAction)}
+          dst_path: ${q(dstPathAction)}
+          dst_owner: ${q(config.dstOwner)}
+          dst_repo_name: ${q(config.dstRepoName)}
+          dst_branch: ${q(config.dstBranch)}
+          src_branch: ${q(config.srcBranch)}
           clean: ${config.clean}
           commit_message: "docs: sync from source repo @ \${{ github.sha }}"
 `;

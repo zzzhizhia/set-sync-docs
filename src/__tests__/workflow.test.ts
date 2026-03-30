@@ -90,6 +90,18 @@ describe("normalizePath", () => {
   it("strips ./ prefix without trailing slash", () => {
     expect(normalizePath("./docs")).toBe("docs/");
   });
+
+  it("throws on path traversal (..)", () => {
+    expect(() => normalizePath("../etc")).toThrow("..");
+  });
+
+  it("throws on nested path traversal", () => {
+    expect(() => normalizePath("docs/../../etc")).toThrow("..");
+  });
+
+  it("normalizes backslashes", () => {
+    expect(normalizePath("docs\\website")).toBe("docs/website/");
+  });
 });
 
 describe("generateYaml", () => {
@@ -103,18 +115,18 @@ describe("generateYaml", () => {
     clean: true,
   };
 
-  it("generates valid workflow YAML", () => {
+  it("generates valid workflow YAML with quoted string values", () => {
     const yaml = generateYaml(config);
 
     expect(yaml).toContain("name: Sync Repo Docs to Wiki");
-    expect(yaml).toContain('branches: [main]');
+    expect(yaml).toContain('branches: ["main"]');
     expect(yaml).toContain('"docs/**"');
     expect(yaml).toContain("workflow_dispatch:");
     expect(yaml).toContain("uses: andstor/copycat-action@v3");
-    expect(yaml).toContain("src_path: /docs/.");
-    expect(yaml).toContain("dst_path: /docs/website/");
-    expect(yaml).toContain("dst_owner: singularquest");
-    expect(yaml).toContain("dst_repo_name: wiki");
+    expect(yaml).toContain('src_path: "/docs/."');
+    expect(yaml).toContain('dst_path: "/docs/website/"');
+    expect(yaml).toContain('dst_owner: "singularquest"');
+    expect(yaml).toContain('dst_repo_name: "wiki"');
     expect(yaml).toContain("clean: true");
   });
 

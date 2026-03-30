@@ -29,7 +29,7 @@
   },
   "homepage": "https://github.com/zzzhizhia/set-sync-docs",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.5.3",
