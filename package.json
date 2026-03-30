@@ -28,6 +28,7 @@
     "url": "https://github.com/zzzhizhia/set-sync-docs.git"
   },
   "homepage": "https://github.com/zzzhizhia/set-sync-docs",
+  "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=20"
   },
