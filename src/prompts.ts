@@ -5,39 +5,39 @@ import type { Config, GitContext } from "./index.js";
 
 export async function collectConfig(ctx: GitContext): Promise<Config> {
   const srcPath = await input({
-    message: "文档源路径（相对仓库根目录）",
+    message: "Source docs path (relative to repo root)",
     default: "docs/",
-    validate: (v) => (v.trim() ? true : "路径不能为空"),
+    validate: (v) => (v.trim() ? true : "Path cannot be empty"),
   });
 
   const srcBranch = await input({
-    message: "源分支",
+    message: "Source branch",
     default: ctx.branch || "main",
   });
 
   const dstOwner = await input({
-    message: "目标仓库 owner",
+    message: "Target repo owner",
     default: ctx.owner || undefined,
-    validate: (v) => (v.trim() ? true : "owner 不能为空"),
+    validate: (v) => (v.trim() ? true : "Owner cannot be empty"),
   });
 
   const dstRepoName = await input({
-    message: "目标仓库名称",
-    validate: (v) => (v.trim() ? true : "仓库名不能为空"),
+    message: "Target repo name",
+    validate: (v) => (v.trim() ? true : "Repo name cannot be empty"),
   });
 
   const dstPath = await input({
-    message: "目标路径（文件将被复制到这里）",
+    message: "Target path (files will be copied here)",
     default: "/",
   });
 
   const dstBranch = await input({
-    message: "目标分支",
+    message: "Target branch",
     default: "main",
   });
 
   const clean = await confirm({
-    message: "是否在同步前清理目标目录？",
+    message: "Clean target directory before sync?",
     default: true,
   });
 
@@ -48,27 +48,27 @@ export async function checkTargetRepo(owner: string, repo: string): Promise<void
   try {
     execSync("gh --version", { stdio: "ignore" });
   } catch {
-    console.log(pc.yellow(`⚠ 未检测到 gh CLI，跳过目标仓库检查。请自行确认 ${owner}/${repo} 存在。`));
+    console.log(pc.yellow(`⚠ gh CLI not found. Skipping target repo check. Please verify ${owner}/${repo} exists.`));
     return;
   }
 
   try {
     execFileSync("gh", ["api", `repos/${owner}/${repo}`], { stdio: "ignore" });
-    console.log(pc.green(`✓ 目标仓库 ${owner}/${repo} 存在`));
+    console.log(pc.green(`✓ Target repo ${owner}/${repo} exists`));
   } catch {
-    console.log(pc.yellow(`⚠ 无法访问 ${owner}/${repo}（可能是私有仓库或尚未创建）。工作流仍会生成。`));
+    console.log(pc.yellow(`⚠ Cannot access ${owner}/${repo} (may be private or not yet created). Workflow will still be generated.`));
   }
 }
 
 export async function confirmGeneration(config: Config): Promise<boolean> {
-  console.log("\n" + pc.bold("配置摘要："));
-  console.log(`  源路径:     ${config.srcPath}`);
-  console.log(`  源分支:     ${config.srcBranch}`);
-  console.log(`  目标仓库:   ${config.dstOwner}/${config.dstRepoName}`);
-  console.log(`  目标路径:   ${config.dstPath}`);
-  console.log(`  目标分支:   ${config.dstBranch}`);
-  console.log(`  清理目标:   ${config.clean ? "是" : "否"}`);
+  console.log("\n" + pc.bold("Configuration summary:"));
+  console.log(`  Source path:   ${config.srcPath}`);
+  console.log(`  Source branch: ${config.srcBranch}`);
+  console.log(`  Target repo:   ${config.dstOwner}/${config.dstRepoName}`);
+  console.log(`  Target path:   ${config.dstPath}`);
+  console.log(`  Target branch: ${config.dstBranch}`);
+  console.log(`  Clean target:  ${config.clean ? "yes" : "no"}`);
   console.log();
 
-  return confirm({ message: "确认生成工作流文件？", default: true });
+  return confirm({ message: "Generate workflow file?", default: true });
 }

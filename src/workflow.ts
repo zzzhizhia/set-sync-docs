@@ -8,7 +8,7 @@ export function normalizePath(input: string): string {
   while (p.startsWith("./")) p = p.slice(2);
   while (p.startsWith("/")) p = p.slice(1);
   if (p.split("/").some((s) => s === "..")) {
-    throw new Error(`路径不允许包含 "..": ${input}`);
+    throw new Error(`Path traversal ("..") is not allowed: ${input}`);
   }
   if (p && !p.endsWith("/")) p += "/";
   return p;
@@ -61,17 +61,17 @@ export async function writeWorkflow(cwd: string, yaml: string): Promise<boolean>
 
   if (existsSync(filePath)) {
     const overwrite = await confirm({
-      message: `${filePath} 已存在，是否覆盖？`,
+      message: `${filePath} already exists. Overwrite?`,
       default: false,
     });
     if (!overwrite) {
-      console.log("已取消写入。");
+      console.log("Write cancelled.");
       return false;
     }
   }
 
   mkdirSync(dir, { recursive: true });
   writeFileSync(filePath, yaml, "utf-8");
-  console.log(`\n✅ 已写入 ${filePath}`);
+  console.log(`\n✅ Written to ${filePath}`);
   return true;
 }

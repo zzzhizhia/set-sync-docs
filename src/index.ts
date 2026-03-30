@@ -54,35 +54,35 @@ function detectGitContext(): GitContext {
 }
 
 function printPATReminder(ctx: GitContext): void {
-  console.log("\n" + pc.bold("📋 接下来你需要设置 Personal Access Token:"));
+  console.log("\n" + pc.bold("Next: set up a Personal Access Token:"));
   console.log();
-  console.log(`  1. 创建 PAT (需要 ${pc.cyan("repo")} 权限):`);
+  console.log(`  1. Create a PAT with ${pc.cyan("repo")} scope:`);
   console.log(`     https://github.com/settings/tokens/new`);
   console.log();
-  console.log(`  2. 将 PAT 添加为${pc.bold("源仓库")}的 secret（工作流从源仓库运行）:`);
+  console.log(`  2. Add the PAT as a secret on the ${pc.bold("source repo")} (where the workflow runs):`);
   console.log(pc.dim(`     gh secret set PAT_SYNC_REPO_DOCS_TO_WIKI`));
   if (ctx.owner && ctx.repo) {
     console.log();
-    console.log(`     或在浏览器中设置:`);
+    console.log(`     Or set it in the browser:`);
     console.log(`     https://github.com/${ctx.owner}/${ctx.repo}/settings/secrets/actions`);
   }
   console.log();
 }
 
 async function main(): Promise<void> {
-  console.log(pc.bold("\n🔄 set-sync-docs — 配置文档同步工作流\n"));
+  console.log(pc.bold("\n🔄 set-sync-docs — Configure docs sync workflow\n"));
 
   // Phase 1: detect git context
   let ctx: GitContext;
   try {
     ctx = detectGitContext();
   } catch {
-    console.error(pc.red("错误：当前目录不是 git 仓库。请在 git 仓库中运行此工具。"));
+    console.error(pc.red("Error: not a git repository. Please run this tool inside a git repo."));
     return process.exit(1);
   }
 
   if (ctx.owner && ctx.repo) {
-    console.log(pc.dim(`检测到仓库: ${ctx.owner}/${ctx.repo} (${ctx.branch})\n`));
+    console.log(pc.dim(`Detected repo: ${ctx.owner}/${ctx.repo} (${ctx.branch})\n`));
   }
 
   // Phase 2-3: collect config
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   // Phase 5: confirm and generate
   const confirmed = await confirmGeneration(config);
   if (!confirmed) {
-    console.log("已取消。");
+    console.log("Cancelled.");
     return;
   }
 
