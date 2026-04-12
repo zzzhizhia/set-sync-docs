@@ -19,40 +19,147 @@ function q(value: string): string {
   return JSON.stringify(value);
 }
 
+export function normalizeConfig(raw: Config): Config {
+  return {
+    ...raw,
+    pushSrcPath: raw.pushSrcPath ? normalizePath(raw.pushSrcPath) : "",
+    pushTargets: raw.pushTargets.map((t) => ({
+      ...t,
+      dstPath: normalizePath(t.dstPath),
+    })),
+    pullSources: raw.pullSources.map((s) => ({
+      ...s,
+      srcPath: normalizePath(s.srcPath),
+      dstPath: normalizePath(s.dstPath),
+    })),
+  };
+}
+
 export function generateYaml(config: Config): string {
-  const srcPathTrigger = `${config.srcPath}**`;
-  const srcPathAction = `/${config.srcPath}.`;
-  const dstPathAction = config.dstPath ? `/${config.dstPath}` : "/";
+  const parts: string[] = [];
 
-  return `name: Sync Repo Docs to Wiki
+  parts.push("name: Sync Docs\n");
+  parts.push(generateTriggers(config));
+  parts.push("jobs:");
 
-on:
-  push:
-    branches: [${q(config.srcBranch)}]
-    paths:
-      - "${srcPathTrigger}"
-  workflow_dispatch:
+  if (config.mode === "push" || config.mode === "both") {
+    parts.push(generatePushJob(config));
+  }
 
-jobs:
-  copy-docs:
+  if (config.mode === "pull" || config.mode === "both") {
+    parts.push(generatePullJob(config));
+  }
+
+  return parts.join("\n") + "\n";
+}
+
+function generateTriggers(config: Config): string {
+  const triggers: string[] = ["on:"];
+
+  if (config.mode === "push" || config.mode === "both") {
+    triggers.push(`  push:`);
+    triggers.push(`    branches: [${q(config.pushSrcBranch)}]`);
+    triggers.push(`    paths:`);
+    triggers.push(`      - "${config.pushSrcPath}**"`);
+  }
+
+  if (config.mode === "pull" || config.mode === "both") {
+    triggers.push(`  schedule:`);
+    triggers.push(`    - cron: "0 0 * * *"`);
+  }
+
+  triggers.push(`  workflow_dispatch:\n`);
+  return triggers.join("\n");
+}
+
+function generatePushJob(config: Config): string {
+  const ifClause = config.mode === "both"
+    ? "\n    if: github.event_name != 'schedule'"
+    : "";
+
+  const matrixEntries = config.pushTargets.map((t) => {
+    const dstPathAction = t.dstPath ? `/${t.dstPath}` : "/";
+    return [
+      `          - dst_owner: ${q(t.dstOwner)}`,
+      `            dst_repo_name: ${q(t.dstRepoName)}`,
+      `            dst_path: ${q(dstPathAction)}`,
+      `            dst_branch: ${q(t.dstBranch)}`,
+      `            clean: ${t.clean}`,
+    ].join("\n");
+  });
+
+  const srcPathAction = `/${config.pushSrcPath}.`;
+
+  return `  push-docs:${ifClause}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+${matrixEntries.join("\n")}
     steps:
       - name: Checkout source repo
         uses: actions/checkout@v4
 
-      - name: Copy docs to target repo
+      - name: Push docs to target repo
         uses: andstor/copycat-action@v3
         with:
-          personal_token: \${{ secrets.PAT_SYNC_REPO_DOCS_TO_WIKI }}
+          personal_token: \${{ secrets.PAT_SET_SYNC_DOCS }}
           src_path: ${q(srcPathAction)}
-          dst_path: ${q(dstPathAction)}
-          dst_owner: ${q(config.dstOwner)}
-          dst_repo_name: ${q(config.dstRepoName)}
-          dst_branch: ${q(config.dstBranch)}
-          src_branch: ${q(config.srcBranch)}
-          clean: ${config.clean}
-          commit_message: "docs: sync from source repo @ \${{ github.sha }}"
-`;
+          dst_path: \${{ matrix.dst_path }}
+          dst_owner: \${{ matrix.dst_owner }}
+          dst_repo_name: \${{ matrix.dst_repo_name }}
+          dst_branch: \${{ matrix.dst_branch }}
+          src_branch: ${q(config.pushSrcBranch)}
+          clean: \${{ matrix.clean }}
+          commit_message: "docs: push from \${{ github.repository }} @ \${{ github.sha }}"`;
+}
+
+function generatePullJob(config: Config): string {
+  const ifClause = config.mode === "both"
+    ? "\n    if: github.event_name != 'push'"
+    : "";
+
+  const pullSteps = config.pullSources.map((s, i) => {
+    const srcDir = `_src_${i}`;
+    const sparseDir = s.srcPath.replace(/\/$/, "");
+    return `
+      - name: Checkout ${s.srcOwner}/${s.srcRepoName}
+        uses: actions/checkout@v4
+        with:
+          repository: ${q(`${s.srcOwner}/${s.srcRepoName}`)}
+          ref: ${q(s.srcBranch)}
+          token: \${{ secrets.PAT_SET_SYNC_DOCS }}
+          path: ${srcDir}
+          sparse-checkout: ${q(sparseDir)}
+
+      - name: Sync ${s.srcOwner}/${s.srcRepoName}
+        run: |
+          mkdir -p ${q(s.dstPath)}
+          rsync -av --delete ${srcDir}/${s.srcPath} ${s.dstPath}
+          rm -rf ${srcDir}`;
+  });
+
+  return `
+  pull-docs:${ifClause}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${q(config.pullBranch)}
+${pullSteps.join("\n")}
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to sync"
+          else
+            git commit -m "docs: pull from source repos @ \$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          fi`;
 }
 
 export async function writeWorkflow(cwd: string, yaml: string): Promise<boolean> {

@@ -1,74 +1,202 @@
-import { input, confirm } from "@inquirer/prompts";
+import { input, select, confirm } from "@inquirer/prompts";
 import { execFileSync, execSync } from "node:child_process";
 import pc from "picocolors";
-import type { Config, GitContext } from "./index.js";
+import type { Config, GitContext, SyncMode, PushTarget, PullSource } from "./index.js";
 
 export async function collectConfig(ctx: GitContext): Promise<Config> {
-  const srcPath = await input({
-    message: "Source docs path (relative to repo root)",
-    default: "docs/",
-    validate: (v) => (v.trim() ? true : "Path cannot be empty"),
+  const mode = await select<SyncMode>({
+    message: "Sync mode",
+    choices: [
+      { value: "push", name: "Push — push docs to target repo(s) on commit" },
+      { value: "pull", name: "Pull — pull docs from source repo(s) on schedule" },
+      { value: "both", name: "Both — push and pull in one workflow" },
+    ],
   });
 
-  const srcBranch = await input({
-    message: "Source branch",
-    default: ctx.branch || "main",
-  });
+  let pushSrcPath = "";
+  let pushSrcBranch = "";
+  let pushTargets: PushTarget[] = [];
+  let pullBranch = "";
+  let pullSources: PullSource[] = [];
 
-  const dstOwner = await input({
-    message: "Target repo owner",
-    default: ctx.owner || undefined,
-    validate: (v) => (v.trim() ? true : "Owner cannot be empty"),
-  });
+  if (mode === "push" || mode === "both") {
+    console.log(pc.bold("\n── Push configuration ──\n"));
 
-  const dstRepoName = await input({
-    message: "Target repo name",
-    validate: (v) => (v.trim() ? true : "Repo name cannot be empty"),
-  });
+    pushSrcPath = await input({
+      message: "Source docs path (relative to repo root)",
+      default: "docs/",
+      validate: (v) => (v.trim() ? true : "Path cannot be empty"),
+    });
 
-  const dstPath = await input({
-    message: "Target path (files will be copied here)",
-    default: "/",
-  });
+    pushSrcBranch = await input({
+      message: "Source branch",
+      default: ctx.branch || "main",
+    });
 
-  const dstBranch = await input({
-    message: "Target branch",
-    default: "main",
-  });
+    pushTargets = await collectPushTargets(ctx);
+  }
 
-  const clean = await confirm({
-    message: "Clean target directory before sync?",
-    default: true,
-  });
+  if (mode === "pull" || mode === "both") {
+    console.log(pc.bold("\n── Pull configuration ──\n"));
 
-  return { srcPath, srcBranch, dstOwner, dstRepoName, dstPath, dstBranch, clean };
+    pullBranch = await input({
+      message: "Branch of this repo to commit pulled docs to",
+      default: ctx.branch || "main",
+    });
+
+    pullSources = await collectPullSources(ctx);
+  }
+
+  return { mode, pushSrcPath, pushSrcBranch, pushTargets, pullBranch, pullSources };
 }
 
-export async function checkTargetRepo(owner: string, repo: string): Promise<void> {
+async function collectPushTargets(ctx: GitContext): Promise<PushTarget[]> {
+  const targets: PushTarget[] = [];
+
+  do {
+    if (targets.length > 0) {
+      console.log(pc.dim(`  (${targets.length} target(s) added)\n`));
+    }
+
+    const dstOwner = await input({
+      message: "Target repo owner",
+      default: ctx.owner || undefined,
+      validate: (v) => (v.trim() ? true : "Owner cannot be empty"),
+    });
+
+    const dstRepoName = await input({
+      message: "Target repo name",
+      validate: (v) => (v.trim() ? true : "Repo name cannot be empty"),
+    });
+
+    const dstPath = await input({
+      message: "Target path (files will be copied here)",
+      default: "/",
+    });
+
+    const dstBranch = await input({
+      message: "Target branch",
+      default: "main",
+    });
+
+    const clean = await confirm({
+      message: "Clean target directory before sync?",
+      default: true,
+    });
+
+    targets.push({ dstOwner, dstRepoName, dstPath, dstBranch, clean });
+
+    const addMore = await confirm({
+      message: "Add another push target?",
+      default: false,
+    });
+    if (!addMore) break;
+  } while (true);
+
+  return targets;
+}
+
+async function collectPullSources(ctx: GitContext): Promise<PullSource[]> {
+  const sources: PullSource[] = [];
+
+  do {
+    if (sources.length > 0) {
+      console.log(pc.dim(`  (${sources.length} source(s) added)\n`));
+    }
+
+    const srcOwner = await input({
+      message: "Source repo owner",
+      default: ctx.owner || undefined,
+      validate: (v) => (v.trim() ? true : "Owner cannot be empty"),
+    });
+
+    const srcRepoName = await input({
+      message: "Source repo name",
+      validate: (v) => (v.trim() ? true : "Repo name cannot be empty"),
+    });
+
+    const srcPath = await input({
+      message: "Source docs path (in the source repo)",
+      default: "docs/",
+      validate: (v) => (v.trim() ? true : "Path cannot be empty"),
+    });
+
+    const dstPath = await input({
+      message: "Destination path (in this repo)",
+      default: `docs/${srcRepoName}/`,
+    });
+
+    const srcBranch = await input({
+      message: "Source branch",
+      default: "main",
+    });
+
+    sources.push({ srcOwner, srcRepoName, srcPath, dstPath, srcBranch });
+
+    const addMore = await confirm({
+      message: "Add another pull source?",
+      default: false,
+    });
+    if (!addMore) break;
+  } while (true);
+
+  return sources;
+}
+
+export async function checkRepos(config: Config): Promise<void> {
+  let hasGh = true;
   try {
     execSync("gh --version", { stdio: "ignore" });
   } catch {
-    console.log(pc.yellow(`⚠ gh CLI not found. Skipping target repo check. Please verify ${owner}/${repo} exists.`));
+    hasGh = false;
+  }
+
+  const repos = new Set<string>();
+  for (const t of config.pushTargets) repos.add(`${t.dstOwner}/${t.dstRepoName}`);
+  for (const s of config.pullSources) repos.add(`${s.srcOwner}/${s.srcRepoName}`);
+
+  if (!hasGh) {
+    if (repos.size > 0) {
+      console.log(pc.yellow(`⚠ gh CLI not found. Skipping repo checks. Please verify these repos exist: ${[...repos].join(", ")}`));
+    }
     return;
   }
 
-  try {
-    execFileSync("gh", ["api", `repos/${owner}/${repo}`], { stdio: "ignore" });
-    console.log(pc.green(`✓ Target repo ${owner}/${repo} exists`));
-  } catch {
-    console.log(pc.yellow(`⚠ Cannot access ${owner}/${repo} (may be private or not yet created). Workflow will still be generated.`));
+  for (const repo of repos) {
+    try {
+      execFileSync("gh", ["api", `repos/${repo}`], { stdio: "ignore" });
+      console.log(pc.green(`✓ ${repo} exists`));
+    } catch {
+      console.log(pc.yellow(`⚠ Cannot access ${repo} (may be private or not yet created)`));
+    }
   }
 }
 
 export async function confirmGeneration(config: Config): Promise<boolean> {
   console.log("\n" + pc.bold("Configuration summary:"));
-  console.log(`  Source path:   ${config.srcPath}`);
-  console.log(`  Source branch: ${config.srcBranch}`);
-  console.log(`  Target repo:   ${config.dstOwner}/${config.dstRepoName}`);
-  console.log(`  Target path:   ${config.dstPath}`);
-  console.log(`  Target branch: ${config.dstBranch}`);
-  console.log(`  Clean target:  ${config.clean ? "yes" : "no"}`);
-  console.log();
+  console.log(`  Mode: ${config.mode}`);
 
+  if (config.mode === "push" || config.mode === "both") {
+    console.log();
+    console.log(`  ${pc.bold("Push:")}`);
+    console.log(`    Source path:   ${config.pushSrcPath}`);
+    console.log(`    Source branch: ${config.pushSrcBranch}`);
+    for (let i = 0; i < config.pushTargets.length; i++) {
+      const t = config.pushTargets[i];
+      console.log(`    Target ${i + 1}: ${t.dstOwner}/${t.dstRepoName}:${t.dstPath} (${t.dstBranch}) clean=${t.clean}`);
+    }
+  }
+
+  if (config.mode === "pull" || config.mode === "both") {
+    console.log();
+    console.log(`  ${pc.bold("Pull:")}`);
+    console.log(`    Commit branch: ${config.pullBranch}`);
+    for (let i = 0; i < config.pullSources.length; i++) {
+      const s = config.pullSources[i];
+      console.log(`    Source ${i + 1}: ${s.srcOwner}/${s.srcRepoName}:${s.srcPath} → ${s.dstPath} (${s.srcBranch})`);
+    }
+  }
+
+  console.log();
   return confirm({ message: "Generate workflow file?", default: true });
 }

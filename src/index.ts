@@ -3,8 +3,8 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import pc from "picocolors";
-import { collectConfig, checkTargetRepo, confirmGeneration } from "./prompts.js";
-import { normalizePath, generateYaml, writeWorkflow } from "./workflow.js";
+import { collectConfig, checkRepos, confirmGeneration } from "./prompts.js";
+import { normalizeConfig, generateYaml, writeWorkflow } from "./workflow.js";
 
 export interface GitContext {
   root: string;
@@ -13,14 +13,33 @@ export interface GitContext {
   branch: string;
 }
 
-export interface Config {
-  srcPath: string;
-  srcBranch: string;
+export type SyncMode = "push" | "pull" | "both";
+
+export interface PushTarget {
   dstOwner: string;
   dstRepoName: string;
   dstPath: string;
   dstBranch: string;
   clean: boolean;
+}
+
+export interface PullSource {
+  srcOwner: string;
+  srcRepoName: string;
+  srcPath: string;
+  dstPath: string;
+  srcBranch: string;
+}
+
+export interface Config {
+  mode: SyncMode;
+  // Push
+  pushSrcPath: string;
+  pushSrcBranch: string;
+  pushTargets: PushTarget[];
+  // Pull
+  pullBranch: string;
+  pullSources: PullSource[];
 }
 
 export function parseRemoteURL(url: string): { owner: string; repo: string } {
@@ -59,8 +78,8 @@ function printPATReminder(ctx: GitContext): void {
   console.log(`  1. Create a PAT with ${pc.cyan("repo")} scope:`);
   console.log(`     https://github.com/settings/tokens/new`);
   console.log();
-  console.log(`  2. Add the PAT as a secret on the ${pc.bold("source repo")} (where the workflow runs):`);
-  console.log(pc.dim(`     gh secret set PAT_SYNC_REPO_DOCS_TO_WIKI`));
+  console.log(`  2. Add the PAT as a secret on ${pc.bold("this repo")} (where the workflow runs):`);
+  console.log(pc.dim(`     gh secret set PAT_SET_SYNC_DOCS`));
   if (ctx.owner && ctx.repo) {
     console.log();
     console.log(`     Or set it in the browser:`);
@@ -85,19 +104,14 @@ async function main(): Promise<void> {
     console.log(pc.dim(`Detected repo: ${ctx.owner}/${ctx.repo} (${ctx.branch})\n`));
   }
 
-  // Phase 2-3: collect config
+  // Phase 2: collect config
   const rawConfig = await collectConfig(ctx);
+  const config = normalizeConfig(rawConfig);
 
-  const config: Config = {
-    ...rawConfig,
-    srcPath: normalizePath(rawConfig.srcPath),
-    dstPath: normalizePath(rawConfig.dstPath),
-  };
+  // Phase 3: check repos
+  await checkRepos(config);
 
-  // Phase 4: check target repo
-  await checkTargetRepo(config.dstOwner, config.dstRepoName);
-
-  // Phase 5: confirm and generate
+  // Phase 4: confirm and generate
   const confirmed = await confirmGeneration(config);
   if (!confirmed) {
     console.log("Cancelled.");
@@ -107,7 +121,6 @@ async function main(): Promise<void> {
   const yaml = generateYaml(config);
   const written = await writeWorkflow(ctx.root, yaml);
 
-  // Phase 6: PAT reminder (only if workflow was written)
   if (written) {
     printPATReminder(ctx);
   }

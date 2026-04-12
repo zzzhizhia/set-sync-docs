@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseRemoteURL } from "../index.js";
-import { normalizePath, generateYaml } from "../workflow.js";
+import { normalizePath, normalizeConfig, generateYaml } from "../workflow.js";
 import type { Config } from "../index.js";
 
 describe("parseRemoteURL", () => {
@@ -104,43 +104,174 @@ describe("normalizePath", () => {
   });
 });
 
-describe("generateYaml", () => {
-  const config: Config = {
-    srcPath: "docs/",
-    srcBranch: "main",
-    dstOwner: "singularquest",
-    dstRepoName: "wiki",
-    dstPath: "docs/website/",
-    dstBranch: "main",
-    clean: true,
+// ── Push workflow ──
+
+describe("generateYaml (push)", () => {
+  const pushConfig: Config = {
+    mode: "push",
+    pushSrcPath: "docs/",
+    pushSrcBranch: "main",
+    pushTargets: [
+      { dstOwner: "singularquest", dstRepoName: "wiki", dstPath: "docs/website/", dstBranch: "main", clean: true },
+    ],
+    pullBranch: "",
+    pullSources: [],
   };
 
-  it("generates valid workflow YAML with quoted string values", () => {
-    const yaml = generateYaml(config);
+  it("generates push workflow with matrix", () => {
+    const yaml = generateYaml(pushConfig);
 
-    expect(yaml).toContain("name: Sync Repo Docs to Wiki");
+    expect(yaml).toContain("name: Sync Docs");
+    expect(yaml).toContain("push:");
     expect(yaml).toContain('branches: ["main"]');
     expect(yaml).toContain('"docs/**"');
     expect(yaml).toContain("workflow_dispatch:");
-    expect(yaml).toContain("uses: andstor/copycat-action@v3");
-    expect(yaml).toContain('src_path: "/docs/."');
-    expect(yaml).toContain('dst_path: "/docs/website/"');
+    expect(yaml).toContain("push-docs:");
+    expect(yaml).toContain("matrix:");
     expect(yaml).toContain('dst_owner: "singularquest"');
     expect(yaml).toContain('dst_repo_name: "wiki"');
-    expect(yaml).toContain("clean: true");
+    expect(yaml).toContain('src_path: "/docs/."');
+    expect(yaml).toContain("copycat-action@v3");
+    expect(yaml).toContain("PAT_SET_SYNC_DOCS");
+    // No schedule trigger for push-only
+    expect(yaml).not.toContain("schedule:");
+    // No pull job
+    expect(yaml).not.toContain("pull-docs:");
   });
 
-  it("preserves ${{ }} expressions unescaped", () => {
-    const yaml = generateYaml(config);
+  it("supports multiple push targets", () => {
+    const multi: Config = {
+      ...pushConfig,
+      pushTargets: [
+        { dstOwner: "org1", dstRepoName: "wiki", dstPath: "docs/app/", dstBranch: "main", clean: true },
+        { dstOwner: "org2", dstRepoName: "docs", dstPath: "web/", dstBranch: "dev", clean: false },
+      ],
+    };
+    const yaml = generateYaml(multi);
 
-    expect(yaml).toContain("${{ secrets.PAT_SYNC_REPO_DOCS_TO_WIKI }}");
+    expect(yaml).toContain('dst_owner: "org1"');
+    expect(yaml).toContain('dst_repo_name: "wiki"');
+    expect(yaml).toContain('dst_owner: "org2"');
+    expect(yaml).toContain('dst_repo_name: "docs"');
+    expect(yaml).toContain('dst_branch: "dev"');
+  });
+
+  it("preserves ${{ }} expressions", () => {
+    const yaml = generateYaml(pushConfig);
+    expect(yaml).toContain("${{ secrets.PAT_SET_SYNC_DOCS }}");
+    expect(yaml).toContain("${{ github.repository }}");
     expect(yaml).toContain("${{ github.sha }}");
-    // Should NOT contain escaped backslash
     expect(yaml).not.toContain("\\${{");
   });
+});
 
-  it("handles clean: false", () => {
-    const yaml = generateYaml({ ...config, clean: false });
-    expect(yaml).toContain("clean: false");
+// ── Pull workflow ──
+
+describe("generateYaml (pull)", () => {
+  const pullConfig: Config = {
+    mode: "pull",
+    pushSrcPath: "",
+    pushSrcBranch: "",
+    pushTargets: [],
+    pullBranch: "main",
+    pullSources: [
+      { srcOwner: "singularquest", srcRepoName: "website", srcPath: "docs/", dstPath: "docs/website/", srcBranch: "main" },
+    ],
+  };
+
+  it("generates pull workflow with schedule", () => {
+    const yaml = generateYaml(pullConfig);
+
+    expect(yaml).toContain("name: Sync Docs");
+    expect(yaml).toContain("schedule:");
+    expect(yaml).toContain('cron: "0 0 * * *"');
+    expect(yaml).toContain("workflow_dispatch:");
+    expect(yaml).toContain("pull-docs:");
+    expect(yaml).toContain('repository: "singularquest/website"');
+    expect(yaml).toContain("rsync -av --delete");
+    expect(yaml).toContain("docs/website/");
+    expect(yaml).toContain("git commit");
+    expect(yaml).toContain("PAT_SET_SYNC_DOCS");
+    // No push trigger for pull-only
+    expect(yaml).not.toContain("  push:");
+    // No push job
+    expect(yaml).not.toContain("push-docs:");
+  });
+
+  it("supports multiple pull sources", () => {
+    const multi: Config = {
+      ...pullConfig,
+      pullSources: [
+        { srcOwner: "org1", srcRepoName: "app", srcPath: "docs/", dstPath: "docs/app/", srcBranch: "main" },
+        { srcOwner: "org2", srcRepoName: "api", srcPath: "doc/", dstPath: "docs/api/", srcBranch: "develop" },
+      ],
+    };
+    const yaml = generateYaml(multi);
+
+    expect(yaml).toContain('repository: "org1/app"');
+    expect(yaml).toContain('repository: "org2/api"');
+    expect(yaml).toContain("_src_0");
+    expect(yaml).toContain("_src_1");
+    expect(yaml).toContain("docs/app/");
+    expect(yaml).toContain("docs/api/");
+  });
+});
+
+// ── Both mode ──
+
+describe("generateYaml (both)", () => {
+  const bothConfig: Config = {
+    mode: "both",
+    pushSrcPath: "docs/",
+    pushSrcBranch: "main",
+    pushTargets: [
+      { dstOwner: "org", dstRepoName: "wiki", dstPath: "docs/web/", dstBranch: "main", clean: true },
+    ],
+    pullBranch: "main",
+    pullSources: [
+      { srcOwner: "org", srcRepoName: "api", srcPath: "docs/", dstPath: "docs/api/", srcBranch: "main" },
+    ],
+  };
+
+  it("generates both push and pull jobs", () => {
+    const yaml = generateYaml(bothConfig);
+
+    // Both triggers
+    expect(yaml).toContain("push:");
+    expect(yaml).toContain("schedule:");
+    expect(yaml).toContain("workflow_dispatch:");
+
+    // Both jobs
+    expect(yaml).toContain("push-docs:");
+    expect(yaml).toContain("pull-docs:");
+
+    // Conditional execution
+    expect(yaml).toContain("github.event_name != 'schedule'");
+    expect(yaml).toContain("github.event_name != 'push'");
+  });
+});
+
+// ── normalizeConfig ──
+
+describe("normalizeConfig", () => {
+  it("normalizes all paths in config", () => {
+    const raw: Config = {
+      mode: "both",
+      pushSrcPath: "./docs",
+      pushSrcBranch: "main",
+      pushTargets: [
+        { dstOwner: "o", dstRepoName: "r", dstPath: "/out/", dstBranch: "main", clean: true },
+      ],
+      pullBranch: "main",
+      pullSources: [
+        { srcOwner: "o", srcRepoName: "r", srcPath: "./src/", dstPath: "/dst", srcBranch: "main" },
+      ],
+    };
+    const config = normalizeConfig(raw);
+
+    expect(config.pushSrcPath).toBe("docs/");
+    expect(config.pushTargets[0].dstPath).toBe("out/");
+    expect(config.pullSources[0].srcPath).toBe("src/");
+    expect(config.pullSources[0].dstPath).toBe("dst/");
   });
 });

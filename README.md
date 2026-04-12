@@ -1,8 +1,6 @@
 # set-sync-docs
 
-Interactive CLI to set up a GitHub Actions workflow that automatically syncs documentation from one repository to another.
-
-Powered by [andstor/copycat-action](https://github.com/andstor/copycat-action).
+Interactive CLI to set up GitHub Actions workflows that sync documentation between repositories. Supports **push** (on commit), **pull** (on schedule), or **both** — with multi-repo targets.
 
 ## Quick Start
 
@@ -10,15 +8,17 @@ Powered by [andstor/copycat-action](https://github.com/andstor/copycat-action).
 npx set-sync-docs
 ```
 
-Run this inside any GitHub repository. The CLI will walk you through the configuration and generate a `.github/workflows/sync-docs.yml` file.
+Run this inside any GitHub repository. The CLI walks you through configuration and generates `.github/workflows/sync-docs.yml`.
 
-## What It Does
+## Sync Modes
 
-1. **Detects** the current git repo (owner, name, branch) from your remote URL
-2. **Asks** you to configure source path, target repo, target path, and branches
-3. **Validates** the target repo exists (via `gh` CLI, if available)
-4. **Generates** a GitHub Actions workflow that syncs docs on every push
-5. **Reminds** you to set up the required Personal Access Token
+| Mode | Trigger | Use case |
+|------|---------|----------|
+| **Push** | On commit to source repo | Source repo pushes docs to one or more target repos |
+| **Pull** | Daily cron (00:00 UTC) | Wiki/hub repo pulls docs from one or more source repos |
+| **Both** | Push + cron | Repo is both a source and a destination |
+
+Each mode supports **multiple targets/sources** in a single workflow.
 
 ## Example
 
@@ -27,43 +27,37 @@ $ npx set-sync-docs
 
 🔄 set-sync-docs — Configure docs sync workflow
 
-Detected repo: myorg/my-app (main)
+Detected repo: myorg/website (main)
 
+? Sync mode Push — push docs to target repo(s) on commit
 ? Source docs path (relative to repo root) docs/
 ? Source branch main
 ? Target repo owner myorg
 ? Target repo name wiki
-? Target path (files will be copied here) docs/my-app/
+? Target path (files will be copied here) docs/website/
 ? Target branch main
 ? Clean target directory before sync? Yes
+? Add another push target? No
 
 Configuration summary:
-  Source path:   docs/
-  Source branch: main
-  Target repo:   myorg/wiki
-  Target path:   docs/my-app/
-  Target branch: main
-  Clean target:  yes
+  Mode: push
+
+  Push:
+    Source path:   docs/
+    Source branch: main
+    Target 1: myorg/wiki:docs/website/ (main) clean=true
 
 ? Generate workflow file? Yes
 
-✅ Written to /path/to/my-app/.github/workflows/sync-docs.yml
-
-Next: set up a Personal Access Token:
-
-  1. Create a PAT with repo scope:
-     https://github.com/settings/tokens/new
-
-  2. Add the PAT as a secret on the source repo (where the workflow runs):
-     gh secret set PAT_SYNC_REPO_DOCS_TO_WIKI
+✅ Written to /path/to/website/.github/workflows/sync-docs.yml
 ```
 
-## Generated Workflow
+## Generated Workflows
 
-The tool generates a workflow like this:
+### Push (multi-target via matrix)
 
 ```yaml
-name: Sync Repo Docs to Wiki
+name: Sync Docs
 
 on:
   push:
@@ -73,44 +67,94 @@ on:
   workflow_dispatch:
 
 jobs:
-  copy-docs:
+  push-docs:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - dst_owner: "myorg"
+            dst_repo_name: "wiki"
+            dst_path: "/docs/website/"
+            dst_branch: "main"
+            clean: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: andstor/copycat-action@v3
+        with:
+          personal_token: ${{ secrets.PAT_SET_SYNC_DOCS }}
+          src_path: "/docs/."
+          dst_path: ${{ matrix.dst_path }}
+          dst_owner: ${{ matrix.dst_owner }}
+          dst_repo_name: ${{ matrix.dst_repo_name }}
+          dst_branch: ${{ matrix.dst_branch }}
+          src_branch: "main"
+          clean: ${{ matrix.clean }}
+```
+
+### Pull (multi-source, sequential)
+
+```yaml
+name: Sync Docs
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  pull-docs:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Copy docs to target repo
-        uses: andstor/copycat-action@v3
+      - uses: actions/checkout@v4
         with:
-          personal_token: ${{ secrets.PAT_SYNC_REPO_DOCS_TO_WIKI }}
-          src_path: "/docs/."
-          dst_path: "/docs/my-app/"
-          dst_owner: "myorg"
-          dst_repo_name: "wiki"
-          dst_branch: "main"
-          src_branch: "main"
-          clean: true
-          commit_message: "docs: sync from source repo @ ${{ github.sha }}"
+          repository: "myorg/website"
+          ref: "main"
+          token: ${{ secrets.PAT_SET_SYNC_DOCS }}
+          path: _src_0
+          sparse-checkout: "docs"
+
+      - run: |
+          mkdir -p docs/website/
+          rsync -av --delete _src_0/docs/ docs/website/
+          rm -rf _src_0
+
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to sync"
+          else
+            git commit -m "docs: pull from source repos"
+            git push
+          fi
 ```
+
+### Both (combined, conditional jobs)
+
+When mode is "both", push and pull jobs coexist in one file with conditional execution:
+- `push-docs` runs on push and workflow_dispatch
+- `pull-docs` runs on schedule and workflow_dispatch
 
 ## PAT Setup
 
-The workflow needs a Personal Access Token to push to the target repo:
+The workflow needs a Personal Access Token with **repo** scope:
 
-1. Go to [github.com/settings/tokens/new](https://github.com/settings/tokens/new)
-2. Create a token with **repo** scope
-3. Add it as a repository secret named `PAT_SYNC_REPO_DOCS_TO_WIKI`:
+1. Create a PAT at [github.com/settings/tokens/new](https://github.com/settings/tokens/new)
+2. Add it as a repository secret:
    ```bash
-   gh secret set PAT_SYNC_REPO_DOCS_TO_WIKI
+   gh secret set PAT_SET_SYNC_DOCS
    ```
 
-The secret must be added to the **source** repository (where the workflow runs), not the target.
+The secret is added to the repo **where the workflow runs**.
 
 ## Requirements
 
 - Node.js >= 20
 - Must be run inside a git repository
-- [GitHub CLI](https://cli.github.com/) (`gh`) is optional but recommended for target repo validation
+- [GitHub CLI](https://cli.github.com/) (`gh`) optional, used for repo validation
 
 ## License
 
