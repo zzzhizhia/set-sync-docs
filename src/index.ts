@@ -80,7 +80,7 @@ function printPATReminder(ctx: GitContext): void {
   console.log(`     https://github.com/settings/tokens/new`);
   console.log();
   console.log(`  2. Add the PAT as a secret on ${pc.bold("this repo")} (where the workflow runs):`);
-  console.log(pc.dim(`     gh secret set GITHUB_PAT_DOCSYNC`));
+  console.log(pc.dim(`     gh secret set PAT_DOCSYNC`));
   if (ctx.owner && ctx.repo) {
     console.log();
     console.log(`     Or set it in the browser:`);

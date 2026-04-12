@@ -1,0 +1,36 @@
+name: Sync Docs
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "docs/**"
+  workflow_dispatch:
+
+jobs:
+  push-docs:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - dst_owner: "singularquest"
+            dst_repo_name: "wiki"
+            dst_path: "/docs/website/"
+            dst_branch: "main"
+            clean: true
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Push docs to target repo
+        uses: andstor/copycat-action@v3
+        with:
+          personal_token: ${{ secrets.GITHUB_PAT_DOCSYNC }}
+          src_path: "/docs/."
+          dst_path: ${{ matrix.dst_path }}
+          dst_owner: ${{ matrix.dst_owner }}
+          dst_repo_name: ${{ matrix.dst_repo_name }}
+          dst_branch: ${{ matrix.dst_branch }}
+          src_branch: "main"
+          clean: ${{ matrix.clean }}
+          commit_message: "docs: push from ${{ github.repository }} @ ${{ github.sha }}"

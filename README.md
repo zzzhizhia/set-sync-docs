@@ -81,7 +81,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: andstor/copycat-action@v3
         with:
-          personal_token: ${{ secrets.GITHUB_PAT_DOCSYNC }}
+          personal_token: ${{ secrets.PAT_DOCSYNC }}
           src_path: "/docs/."
           dst_path: ${{ matrix.dst_path }}
           dst_owner: ${{ matrix.dst_owner }}
@@ -111,7 +111,7 @@ jobs:
         with:
           repository: "myorg/website"
           ref: "main"
-          token: ${{ secrets.GITHUB_PAT_DOCSYNC }}
+          token: ${{ secrets.PAT_DOCSYNC }}
           path: _src_0
           sparse-checkout: "docs"
 
@@ -145,7 +145,7 @@ The workflow needs a Personal Access Token with **repo** scope:
 1. Create a PAT at [github.com/settings/tokens/new](https://github.com/settings/tokens/new)
 2. Add it as a repository secret:
    ```bash
-   gh secret set GITHUB_PAT_DOCSYNC
+   gh secret set PAT_DOCSYNC
    ```
 
 The secret is added to the repo **where the workflow runs**.

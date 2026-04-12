@@ -1,0 +1,16 @@
+{
+  "mode": "push",
+  "pushSrcPath": "docs/",
+  "pushSrcBranch": "main",
+  "pushTargets": [
+    {
+      "dstOwner": "singularquest",
+      "dstRepoName": "wiki",
+      "dstPath": "docs/website/",
+      "dstBranch": "main",
+      "clean": true
+    }
+  ],
+  "pullBranch": "",
+  "pullSources": []
+}

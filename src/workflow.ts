@@ -103,7 +103,7 @@ ${matrixEntries.join("\n")}
       - name: Push docs to target repo
         uses: andstor/copycat-action@v3
         with:
-          personal_token: \${{ secrets.GITHUB_PAT_DOCSYNC }}
+          personal_token: \${{ secrets.PAT_DOCSYNC }}
           src_path: ${q(srcPathAction)}
           dst_path: \${{ matrix.dst_path }}
           dst_owner: \${{ matrix.dst_owner }}
@@ -128,7 +128,7 @@ function generatePullJob(config: Config): string {
         with:
           repository: ${q(`${s.srcOwner}/${s.srcRepoName}`)}
           ref: ${q(s.srcBranch)}
-          token: \${{ secrets.GITHUB_PAT_DOCSYNC }}
+          token: \${{ secrets.PAT_DOCSYNC }}
           path: ${srcDir}
           sparse-checkout: ${q(sparseDir)}
 
