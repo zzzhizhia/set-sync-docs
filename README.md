@@ -5,10 +5,37 @@ Interactive CLI to set up GitHub Actions workflows that sync documentation betwe
 ## Quick Start
 
 ```bash
+# Interactive mode
 npx set-docsync
+
+# Non-interactive push
+npx set-docsync push --src docs/ --to org/wiki:docs/website/@main
+
+# Non-interactive pull
+npx set-docsync pull --from org/website:docs/:docs/website/@main
+
+# Multiple targets
+npx set-docsync push --src docs/ --to org/wiki:docs/web/ --to org/docs:api/
 ```
 
-Run this inside any GitHub repository. The CLI walks you through configuration and generates `.github/workflows/docsync.yml`.
+Run inside any GitHub repository. Generates `.github/workflows/docsync.yml`.
+
+### CLI Options
+
+```
+Usage: set-docsync [push|pull] [options]
+
+No arguments    Interactive mode
+
+Options:
+  --src <path>        Source docs path (default: docs/)
+  --branch <branch>   Source/commit branch (default: main)
+  --to <target>       Push target — owner/repo[:dst_path][@branch]  (repeatable)
+  --from <source>     Pull source — owner/repo[:src_path[:dst_path]][@branch]  (repeatable)
+  --clean             Clean target directory before push (default: true)
+  --no-clean          Don't clean target directory
+  -h, --help          Show help
+```
 
 ## Sync Modes
 
