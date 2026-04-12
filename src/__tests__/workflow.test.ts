@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { parseRemoteURL } from "../index.js";
+import { parseRemoteURL, parsePushTarget, parsePullSource } from "../index.js";
 import { normalizePath, normalizeConfig, generateYaml, readExistingConfig } from "../workflow.js";
 import type { Config } from "../index.js";
 
@@ -318,5 +318,81 @@ describe("readExistingConfig", () => {
     expect(readExistingConfig(testDir)).toBeNull();
 
     rmSync(testDir, { recursive: true, force: true });
+  });
+});
+
+// ── CLI arg parsers ──
+
+describe("parsePushTarget", () => {
+  it("parses full format owner/repo:path@branch", () => {
+    expect(parsePushTarget("org/wiki:docs/web/@dev", true)).toEqual({
+      dstOwner: "org",
+      dstRepoName: "wiki",
+      dstPath: "docs/web/",
+      dstBranch: "dev",
+      clean: true,
+    });
+  });
+
+  it("parses minimal format owner/repo", () => {
+    expect(parsePushTarget("org/wiki", false)).toEqual({
+      dstOwner: "org",
+      dstRepoName: "wiki",
+      dstPath: "/",
+      dstBranch: "main",
+      clean: false,
+    });
+  });
+
+  it("parses owner/repo:path without branch", () => {
+    expect(parsePushTarget("org/wiki:docs/", true)).toEqual({
+      dstOwner: "org",
+      dstRepoName: "wiki",
+      dstPath: "docs/",
+      dstBranch: "main",
+      clean: true,
+    });
+  });
+
+  it("parses owner/repo@branch without path", () => {
+    expect(parsePushTarget("org/wiki@dev", true)).toEqual({
+      dstOwner: "org",
+      dstRepoName: "wiki",
+      dstPath: "/",
+      dstBranch: "dev",
+      clean: true,
+    });
+  });
+});
+
+describe("parsePullSource", () => {
+  it("parses full format owner/repo:src:dst@branch", () => {
+    expect(parsePullSource("org/app:docs/:docs/app/@dev")).toEqual({
+      srcOwner: "org",
+      srcRepoName: "app",
+      srcPath: "docs/",
+      dstPath: "docs/app/",
+      srcBranch: "dev",
+    });
+  });
+
+  it("parses minimal format owner/repo", () => {
+    expect(parsePullSource("org/app")).toEqual({
+      srcOwner: "org",
+      srcRepoName: "app",
+      srcPath: "docs/",
+      dstPath: "docs/app/",
+      srcBranch: "main",
+    });
+  });
+
+  it("parses owner/repo:src without dst", () => {
+    expect(parsePullSource("org/app:src/")).toEqual({
+      srcOwner: "org",
+      srcRepoName: "app",
+      srcPath: "src/",
+      dstPath: "docs/app/",
+      srcBranch: "main",
+    });
   });
 });
