@@ -191,7 +191,7 @@ describe("generateYaml (pull)", () => {
     expect(yaml).toContain("workflow_dispatch:");
     expect(yaml).toContain("pull-docs:");
     expect(yaml).toContain('repository: "singularquest/website"');
-    expect(yaml).toContain("rsync -av --delete");
+    expect(yaml).toContain("rsync -av --delete --exclude '.git'");
     expect(yaml).toContain("docs/website/");
     expect(yaml).toContain("git commit");
     expect(yaml).toContain("PAT_DOCSYNC");

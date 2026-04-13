@@ -98,7 +98,7 @@ function generatePushJob(config: Config): string {
 ${matrixEntries.join("\n")}
     steps:
       - name: Checkout source repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Push docs to target repo
         uses: andstor/copycat-action@v3
@@ -124,7 +124,7 @@ function generatePullJob(config: Config): string {
     const sparseDir = s.srcPath.replace(/\/$/, "");
     return `
       - name: Checkout ${s.srcOwner}/${s.srcRepoName}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${q(`${s.srcOwner}/${s.srcRepoName}`)}
           ref: ${q(s.srcBranch)}
@@ -135,7 +135,7 @@ function generatePullJob(config: Config): string {
       - name: Sync ${s.srcOwner}/${s.srcRepoName}
         run: |
           mkdir -p ${q(s.dstPath)}
-          rsync -av --delete ${srcDir}/${s.srcPath} ${s.dstPath}
+          rsync -av --delete --exclude '.git' ${srcDir}/${s.srcPath} ${s.dstPath}
           rm -rf ${srcDir}`;
   });
 
@@ -144,8 +144,9 @@ function generatePullJob(config: Config): string {
     runs-on: ubuntu-latest
     steps:
       - name: Checkout this repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
+          token: \${{ secrets.PAT_DOCSYNC }}
           ref: ${q(config.pullBranch)}
 ${pullSteps.join("\n")}
 

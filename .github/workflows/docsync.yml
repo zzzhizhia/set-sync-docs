@@ -20,7 +20,7 @@ jobs:
             clean: true
     steps:
       - name: Checkout source repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Push docs to target repo
         uses: andstor/copycat-action@v3
