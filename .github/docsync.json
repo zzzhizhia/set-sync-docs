@@ -1,5 +1,4 @@
 {
-  "mode": "push",
   "pushSrcPath": "docs/",
   "pushSrcBranch": "main",
   "pushTargets": [
@@ -12,5 +11,6 @@
     }
   ],
   "pullBranch": "",
-  "pullSources": []
+  "pullSources": [],
+  "dedup": false
 }

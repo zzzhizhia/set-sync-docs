@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+      # Action users pin to a git tag and load dist/action/index.cjs from the
+      # repo at that tag. This check ensures the committed bundle matches src/.
+      - name: Ensure dist/action is up to date with src
+        run: |
+          if ! git diff --quiet dist/action; then
+            echo "dist/action is out of date. Run pnpm build and commit the result."
+            git diff dist/action
+            exit 1
+          fi

@@ -4,77 +4,26 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import pc from "picocolors";
+import { parsePullSource, parsePushTarget, parseRemoteURL } from "../core/parse.js";
 import { collectConfig, checkRepos, confirmGeneration } from "./prompts.js";
-import { normalizeConfig, generateYaml, writeWorkflow, readExistingConfig } from "./workflow.js";
+import { generateYaml, normalizeConfig, readExistingConfig, writeWorkflow } from "./workflow.js";
+import type { CLIConfig, GitContext } from "./types.js";
 
-export interface GitContext {
-  root: string;
-  owner: string;
-  repo: string;
-  branch: string;
-}
-
-export type SyncMode = "push" | "pull" | "both";
-
-export interface PushTarget {
-  dstOwner: string;
-  dstRepoName: string;
-  dstPath: string;
-  dstBranch: string;
-  clean: boolean;
-  dedup?: boolean;
-}
-
-export interface PullSource {
-  srcOwner: string;
-  srcRepoName: string;
-  srcPath: string;
-  dstPath: string;
-  srcBranch: string;
-}
-
-export interface Config {
-  mode: SyncMode;
-  // Push
-  pushSrcPath: string;
-  pushSrcBranch: string;
-  pushTargets: PushTarget[];
-  // Pull
-  pullBranch: string;
-  pullSources: PullSource[];
-  pullDedup?: boolean;
-  // Last synced commit SHA per "owner/repo@branch" — updated by the pull
-  // workflow, preserved across CLI rewrites.
-  sourceSHAs?: Record<string, string>;
-}
-
-export function parseRemoteURL(url: string): { owner: string; repo: string } {
-  // SSH: git@github.com:owner/repo.git
-  const sshMatch = url.match(/(?:^|[@/])github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
-  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
-
-  // HTTPS: https://github.com/owner/repo.git
-  const httpsMatch = url.match(/[:\/]github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
-  if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
-
-  return { owner: "", repo: "" };
-}
+export { parseRemoteURL, parsePushTarget, parsePullSource };
+export type { CLIConfig, GitContext };
 
 function detectGitContext(): GitContext {
   const run = (cmd: string) => execSync(cmd, { encoding: "utf-8" }).trim();
-
   const root = run("git rev-parse --show-toplevel");
   const branch = run("git branch --show-current");
-
   let owner = "";
   let repo = "";
   try {
     const remoteURL = run("git remote get-url origin");
     ({ owner, repo } = parseRemoteURL(remoteURL));
   } catch {
-    // no origin remote — user will enter manually
+    /* no origin — user will enter manually */
   }
-
   return { root, owner, repo, branch };
 }
 
@@ -88,7 +37,7 @@ function printPATReminder(ctx: GitContext): void {
   console.log(pc.dim(`     gh secret set PAT_DOCSYNC`));
   if (ctx.owner && ctx.repo) {
     console.log();
-    console.log(`     Or set it in the browser:`);
+    console.log(`     Or in the browser:`);
     console.log(`     https://github.com/${ctx.owner}/${ctx.repo}/settings/secrets/actions`);
   }
   console.log();
@@ -99,7 +48,7 @@ const USAGE = `Usage: set-docsync [push|pull] [options]
 No arguments    Interactive mode
 
 Push mode:
-  set-docsync push --src <path> --to <owner/repo:dst_path@branch> [--clean]
+  set-docsync push --src <path> --to <owner/repo:dst_path@branch> [--no-clean]
 
 Pull mode:
   set-docsync pull --from <owner/repo:src_path:dst_path@branch> [--branch <branch>]
@@ -109,53 +58,11 @@ Options:
   --branch <branch>   Source/commit branch (default: main)
   --to <target>       Push target — owner/repo[:dst_path][@branch]  (repeatable)
   --from <source>     Pull source — owner/repo[:src_path[:dst_path]][@branch]  (repeatable)
-  --clean             Clean target directory before push (default: true)
   --no-clean          Don't clean target directory before push
-  --dedup             Replace identical files with symlinks to save space
+  --dedup             Replace identical files with symlinks
   -h, --help          Show this help`;
 
-// --to owner/repo:dst_path@branch
-export function parsePushTarget(arg: string, clean: boolean, dedup = false): PushTarget {
-  const [pathsPart, branch] = arg.split("@");
-  const colonIdx = pathsPart.indexOf(":");
-  const repo = colonIdx === -1 ? pathsPart : pathsPart.slice(0, colonIdx);
-  const dstPath = colonIdx === -1 ? "/" : pathsPart.slice(colonIdx + 1);
-  const slashIdx = repo.indexOf("/");
-  if (slashIdx === -1) {
-    console.error(pc.red(`Error: invalid --to format "${arg}". Expected owner/repo[:path][@branch]`));
-    process.exit(1);
-  }
-  return {
-    dstOwner: repo.slice(0, slashIdx),
-    dstRepoName: repo.slice(slashIdx + 1),
-    dstPath: dstPath || "/",
-    dstBranch: branch || "main",
-    clean,
-    dedup,
-  };
-}
-
-// --from owner/repo:src_path:dst_path@branch
-export function parsePullSource(arg: string): PullSource {
-  const [pathsPart, branch] = arg.split("@");
-  const parts = pathsPart.split(":");
-  const repo = parts[0];
-  const slashIdx = repo.indexOf("/");
-  if (slashIdx === -1) {
-    console.error(pc.red(`Error: invalid --from format "${arg}". Expected owner/repo[:src[:dst]][@branch]`));
-    process.exit(1);
-  }
-  const repoName = repo.slice(slashIdx + 1);
-  return {
-    srcOwner: repo.slice(0, slashIdx),
-    srcRepoName: repoName,
-    srcPath: parts[1] || "docs/",
-    dstPath: parts[2] || `docs/${repoName}/`,
-    srcBranch: branch || "main",
-  };
-}
-
-function parseCliArgs(): Config | null {
+function parseCliArgs(): CLIConfig | null {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     strict: false,
@@ -177,7 +84,7 @@ function parseCliArgs(): Config | null {
   }
 
   const sub = positionals[0];
-  if (!sub) return null; // interactive mode
+  if (!sub) return null;
 
   const clean = values["no-clean"] ? false : (values.clean ?? true);
   const dedup = (values.dedup as boolean | undefined) ?? false;
@@ -190,12 +97,12 @@ function parseCliArgs(): Config | null {
       process.exit(1);
     }
     return {
-      mode: "push",
       pushSrcPath: (values.src as string) || "docs/",
       pushSrcBranch: (values.branch as string) || "main",
-      pushTargets: toArgs.map((t) => parsePushTarget(t, clean as boolean, dedup)),
+      pushTargets: toArgs.map((t) => parsePushTarget(t, clean as boolean)),
       pullBranch: "",
       pullSources: [],
+      dedup,
     };
   }
 
@@ -207,13 +114,12 @@ function parseCliArgs(): Config | null {
       process.exit(1);
     }
     return {
-      mode: "pull",
       pushSrcPath: "",
       pushSrcBranch: "",
       pushTargets: [],
       pullBranch: (values.branch as string) || "main",
       pullSources: fromArgs.map(parsePullSource),
-      pullDedup: dedup,
+      dedup,
     };
   }
 
@@ -223,7 +129,6 @@ function parseCliArgs(): Config | null {
 }
 
 async function main(): Promise<void> {
-  // Non-interactive mode: args present
   const cliConfig = parseCliArgs();
   if (cliConfig) {
     let ctx: GitContext;
@@ -239,7 +144,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Interactive mode
   console.log(pc.bold("\n🔄 set-docsync — Configure docs sync workflow\n"));
 
   let ctx: GitContext;
@@ -269,23 +173,16 @@ async function main(): Promise<void> {
   const yaml = generateYaml(config);
   const written = await writeWorkflow(ctx.root, yaml, config);
 
-  if (written) {
-    printPATReminder(ctx);
-  }
+  if (written) printPATReminder(ctx);
 }
 
-// Only run when executed directly, not when imported by tests.
-// Use realpathSync to resolve npm/pnpm symlinks in node_modules/.bin/
 const currentFile = fileURLToPath(import.meta.url);
 const isDirectRun =
-  process.argv[1] != null &&
-  resolve(realpathSync(process.argv[1])) === currentFile;
+  process.argv[1] != null && resolve(realpathSync(process.argv[1])) === currentFile;
 
 if (isDirectRun) {
   main().catch((err) => {
-    if (err?.name === "ExitPromptError") {
-      process.exit(0);
-    }
+    if (err?.name === "ExitPromptError") process.exit(0);
     console.error(pc.red(err.message || err));
     process.exit(1);
   });

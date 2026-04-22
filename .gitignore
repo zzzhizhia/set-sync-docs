@@ -1,2 +1,5 @@
 node_modules/
 dist/
+# Action bundle must ship with the repo so `uses: ...@vN` resolves it.
+!dist/action/
+!dist/action/**

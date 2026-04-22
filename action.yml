@@ -1,0 +1,41 @@
+name: set-docsync
+description: Sync docs between repositories. Push, pull, or both in a single invocation.
+author: zzzhizhi
+branding:
+  icon: copy
+  color: blue
+inputs:
+  token:
+    description: Personal Access Token with repo scope for cross-repo git and gh api access.
+    required: true
+  sources:
+    description: |
+      Pull sources, one per line. Format: owner/repo[:src_path[:dst_path]][@branch].
+      Pull runs on schedule / workflow_dispatch events.
+    required: false
+    default: ''
+  targets:
+    description: |
+      Push targets, one per line. Format: owner/repo[:dst_path][@branch].
+      Push runs on push / workflow_dispatch events.
+    required: false
+    default: ''
+  src-path:
+    description: Source docs path in this repo (push only).
+    required: false
+    default: docs/
+  dedup:
+    description: Replace byte-identical files with relative symlinks (applies to both push and pull).
+    required: false
+    default: 'false'
+  clean:
+    description: Clean each target's dst_path before syncing (push only; preserves .git).
+    required: false
+    default: 'true'
+  state-path:
+    description: Path to the state file that tracks last-synced SHAs per pull source.
+    required: false
+    default: .github/docsync.json
+runs:
+  using: node20
+  main: dist/action/index.cjs
