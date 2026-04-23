@@ -20048,18 +20048,13 @@ async function cloneTarget(target, token, path4) {
   ]);
 }
 async function cloneSourceSparse(source, token, path4) {
-  await exec("git", [
-    "clone",
-    "--depth",
-    "1",
-    "--branch",
-    source.srcBranch,
-    "--sparse",
-    "--filter=blob:none",
-    authURL(source.srcOwner, source.srcRepoName, token),
-    path4
-  ]);
   const sparse = source.srcPath.replace(/\/$/, "");
+  const args = ["clone", "--depth", "1", "--branch", source.srcBranch];
+  if (sparse) {
+    args.push("--sparse", "--filter=blob:none");
+  }
+  args.push(authURL(source.srcOwner, source.srcRepoName, token), path4);
+  await exec("git", args);
   if (sparse) {
     await exec("git", ["-C", path4, "sparse-checkout", "set", sparse]);
   }

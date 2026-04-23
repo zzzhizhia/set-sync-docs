@@ -51,16 +51,16 @@ async function cloneSourceSparse(
   token: string,
   path: string,
 ): Promise<void> {
-  await exec("git", [
-    "clone",
-    "--depth", "1",
-    "--branch", source.srcBranch,
-    "--sparse",
-    "--filter=blob:none",
-    authURL(source.srcOwner, source.srcRepoName, token),
-    path,
-  ]);
   const sparse = source.srcPath.replace(/\/$/, "");
+  const args = ["clone", "--depth", "1", "--branch", source.srcBranch];
+  // `git clone --sparse` only checks out root-level files; subdirs require
+  // an explicit `sparse-checkout set`. Skip --sparse entirely for
+  // whole-repo syncs so every file in the tree is materialized.
+  if (sparse) {
+    args.push("--sparse", "--filter=blob:none");
+  }
+  args.push(authURL(source.srcOwner, source.srcRepoName, token), path);
+  await exec("git", args);
   if (sparse) {
     await exec("git", ["-C", path, "sparse-checkout", "set", sparse]);
   }
